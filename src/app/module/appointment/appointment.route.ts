@@ -2,6 +2,8 @@ import { Router } from "express";
 import { AppointmentController } from "./appointment.controller";
 import { auth } from "../../middleware/checkAuth";
 import { Role } from "../../../generated/prisma/enums";
+import { validateRequest } from "../../middleware/validateRequest";
+import { UpdateAppointmentStatusValidationZodSchema } from "./appointment.validation";
 
 const router = Router();
 
@@ -19,6 +21,12 @@ router.post(
   AppointmentController.payAppointment,
 );
 
+// Book Appointment Callback URL route
+router.get(
+  "/book-appointment/payment/callback",
+  AppointmentController.bookAppointmentCallback,
+);
+
 // Cancel Appointment route
 router.post(
   "/cancel-appointment",
@@ -26,10 +34,40 @@ router.post(
   AppointmentController.cancelAppointment,
 );
 
-// Book Appointment Callback URL route
+// Update Appointment Status
+router.patch(
+  "/update-status/:appointmentId",
+  auth(Role.DOCTOR),
+  validateRequest(UpdateAppointmentStatusValidationZodSchema),
+  AppointmentController.updateAppointmentStatus,
+);
+
+// Get my appointments(Patient)
 router.get(
-  "/book-appointment/payment/callback",
-  AppointmentController.bookAppointmentCallback,
+  "/my-appointments",
+  auth(Role.PATIENT),
+  AppointmentController.getMyAppointments,
+);
+
+// Get my appointments(Doctor)
+router.get(
+  "/doctor-appointments",
+  auth(Role.DOCTOR),
+  AppointmentController.getDoctorAppointments,
+);
+
+// Get all appointments
+router.get(
+  "/all-appointments",
+  auth(Role.ADMIN, Role.SUPER_ADMIN),
+  AppointmentController.getAllAppointments,
+);
+
+// Get Single Appointment by Id
+router.get(
+  "/:appointmentId",
+  auth(Role.PATIENT, Role.DOCTOR, Role.ADMIN, Role.SUPER_ADMIN),
+  AppointmentController.getSingleAppointment,
 );
 
 export const AppointmentRoutes = router;
