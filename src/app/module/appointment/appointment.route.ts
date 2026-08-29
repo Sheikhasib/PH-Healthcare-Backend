@@ -3,7 +3,10 @@ import { AppointmentController } from "./appointment.controller";
 import { auth } from "../../middleware/checkAuth";
 import { Role } from "../../../generated/prisma/enums";
 import { validateRequest } from "../../middleware/validateRequest";
-import { UpdateAppointmentStatusValidationZodSchema } from "./appointment.validation";
+import {
+  BookAppointmentValidationZodSchema,
+  UpdateAppointmentStatusValidationZodSchema,
+} from "./appointment.validation";
 
 const router = Router();
 
@@ -11,6 +14,7 @@ const router = Router();
 router.post(
   "/book-appointment",
   auth(Role.PATIENT),
+  validateRequest(BookAppointmentValidationZodSchema),
   AppointmentController.bookAppointment,
 );
 
@@ -21,7 +25,7 @@ router.post(
   AppointmentController.payAppointment,
 );
 
-// Book Appointment Callback URL route
+// Book Appointment Callback URL route(bKash)
 router.get(
   "/book-appointment/payment/callback",
   AppointmentController.bookAppointmentCallback,
@@ -34,7 +38,7 @@ router.post(
   AppointmentController.cancelAppointment,
 );
 
-// Update Appointment Status
+// Update Appointment Status by appointmentId
 router.patch(
   "/update-status/:appointmentId",
   auth(Role.DOCTOR),
