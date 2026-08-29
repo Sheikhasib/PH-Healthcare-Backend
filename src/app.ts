@@ -18,6 +18,7 @@ import { UserRoutes } from "./app/module/user/user.route";
 import { getBkashIdToken } from "./app/lib/bKash";
 import { AppointmentRoutes } from "./app/module/appointment/appointment.route";
 import { DoctorRoutes } from "./app/module/doctor/doctor.route";
+import { ScheduleRoutes } from "./app/module/schedule/schedule.route";
 
 const app: Application = express();
 
@@ -54,6 +55,9 @@ app.use("/api/v1/appointment", AppointmentRoutes);
 
 // Doctor routes
 app.use("/api/v1/doctor", DoctorRoutes);
+
+// Schedule routes
+app.use("/api/v1/schedule", ScheduleRoutes);
 
 app.get("/test", async (req: Request, res: Response, next: NextFunction) => {
   try {
