@@ -1,12 +1,12 @@
 ---
-description: Create a spec file for a new GearUp feature
-argument-hint: "Feature name, e.g. public-gear-browsing or provider-dashboard"
+description: Create a spec file for a new PH Healthcare backend feature
+argument-hint: "Feature name, e.g. appointment-booking or doctor-management"
 allowed-tools: Read, Write, Glob, Bash(git:*)
 ---
 
-You are a senior developer spinning up a new feature for GearUp, a sports gear rental marketplace.
+You are a senior backend developer spinning up a new feature for the PH Healthcare System, a doctor-appointment platform: patients book consultations, doctors run them, and admins approve doctors and keep the platform running.
 
-Always follow AGENTS.md conventions (Next.js 16: proxy.ts not middleware.ts, params is Promise, Turbopack default).
+This repo is the **backend only** — Node.js + Express 5 + TypeScript + Prisma 7 + PostgreSQL + Zod v4. No frontend code lives here; every feature is an API feature.
 
 User input: $ARGUMENTS
 
@@ -16,9 +16,9 @@ From $ARGUMENTS extract:
 
 | Variable | Rule | Example |
 |----------|------|---------|
-| `feature_title` | Title Case, human readable | "Public Gear Browsing" |
-| `feature_slug` | kebab-case, a-z0-9, max 40 chars | `public-gear-browsing` |
-| `branch_name` | `feature/<slug>` | `feature/public-gear-browsing` |
+| `feature_title` | Title Case, human readable | "Appointment Booking" |
+| `feature_slug` | kebab-case, a-z0-9, max 40 chars | `appointment-booking` |
+| `branch_name` | `feat/<slug>` | `feat/appointment-booking` |
 
 Ask the user if ambiguous.
 
@@ -28,44 +28,58 @@ Read these before writing the spec:
 
 **Existing specs** — `.opencode/specs/*.md` (read them all, avoid duplication)
 
-**Types** — `lib/types.ts`
-- IGearItem, ICategory, IUser, IRentalOrder, IPayment, IReview
-- ICreateGearPayload, IUpdateGearPayload, ICreateRentalPayload
-- IApiResponse\<T\>, IGearQuery
-- Enums: Role (CUSTOMER|PROVIDER|ADMIN), RentalStatus (PLACED|CONFIRMED|PAID|PICKED_UP|RETURNED|CANCELLED)
+**Product requirements** — `Project Requirements.md` — the authoritative rules for every feature. Cite the relevant section in the spec's Overview so implementers never guess.
 
-**API layer** — `lib/api/`
-- `client.ts` — `apiClient<T>(endpoint, options?)` — base fetch, throws ApiError, includes credentials
-- `gear.ts` — `fetchGear(query?)`, `fetchGearById(id)`
-- `categories.ts` — `fetchCategories()`
-- `provider.ts` — `createGear()`, `fetchMyGear()`, `updateGear()`, `deleteGear()`, `fetchIncomingOrders()`, `updateOrderStatus()`
-- `rentals.ts` — `createRental()`, `fetchMyRentals()`, `fetchRentalById()`, `cancelRental()`
+**Reference module** — `src/app/module/doctor/` is the most complete module; `src/app/module/schedule/` shows the list/pagination pattern. Read the target module's siblings before writing.
 
-**Hooks** — `hooks/`
-- `useGear.ts` — `useGear(query?)`, `useGearById(id)`
-- `useCategories.ts` — `useCategories()`
-- `useProvider.ts` — `useMyGear()`, `useCreateGear()`, `useDeleteGear()`, `useIncomingOrders()`, `useUpdateOrderStatus()`
+**Module layout** — `src/app/module/` — each feature is exactly one folder:
 
-**Shared components** — `components/shared/`
-- `gear-image-upload.tsx` — Cloudinary upload widget wrapper, shows image previews with remove button
+| File                   | Responsibility |
+|------------------------|----------------|
+| `<name>.route.ts`      | Express `Router`, wires `auth(...roles)` + `validateRequest(...)`, exports `<Name>Routes` |
+| `<name>.controller.ts` | Reads `req.body` / `req.params` / `req.user`, calls the service, calls `sendResponse` |
+| `<name>.service.ts`    | All business logic and every Prisma call for the module |
+| `<name>.interface.ts`  | TypeScript types for the module's payloads |
+| `<name>.validation.ts` | Zod v4 schemas (expected for every mutating route) |
 
-**Route groups** — `app/`
-- `(publicGroup)/` — home, gear browsing, gear detail, payment pages (no auth required)
-- `(authGroup)/` — login, register (redirect if authenticated)
-- `(dashboardGroup)/` — customer/, provider/, admin/ with sidebar layout (auth required)
+**Data model** — `prisma/schema/*.prisma` (split across files, wired by `prisma.config.ts`):
+- `user.prisma` — User: `Role` (SUPER_ADMIN\|ADMIN\|DOCTOR\|PATIENT), `UserStatus` (ACTIVE\|BLOCKED\|DELETED), `AuthProvider` (GOOGLE\|CREDENTIAL), `emailVerified`, `needPasswordChange`, soft-delete (`isDeleted`/`deletedAt`)
+- `doctor.prisma` — Doctor: specialization, licenseNumber (unique), consultationFee (`Decimal`), `verificationStatus` (PENDING\|APPROVED\|REJECTED), resume/additionalFiles
+- `patient.prisma` — Patient
+- `schedule.prisma` — Schedule: `startDateTime`/`endDateTime`, `totalSlots`/`availableSlots`, `status` (DRAFT\|PUBLISHED), `@@unique([doctorId, startDateTime, endDateTime])`
+- `appointment.prisma` — Appointment: `status` (PENDING\|CONFIRMED\|CANCELLED\|ONGOING\|COMPLETED), `serialNumber`, `@@unique([patientId, doctorId, scheduleId])`
+- `payment.prisma` — Payment: `status` (UNPAID\|PROCESSING\|PAID\|FAILED\|CANCELLED\|REFUNDED), bKash fields
+- `enums.prisma` — every enum lives here
 
-**Other files**
-- `app/providers/query-provider.tsx` — TanStack QueryClientProvider setup
-- `app/layout.tsx` — root layout wrapping QueryProvider + ThemeProvider
-- `next.config.ts` — image remotePatterns for res.cloudinary.com + images.unsplash.com
-- `proxy.ts` — (if exists) for auth token refresh + role-based routing
-- `AGENTS.md` — project-specific Next.js 16 quirks
+Generated client: `src/generated/prisma/` (git-ignored, run `npx prisma generate`). Import enums from `../../generated/prisma/enums`, where-input types from `../../generated/prisma/models`, browser types from `../../generated/prisma/browser`.
+
+**Shared infra** — `src/app/`:
+- `config/index.ts` — the only place `process.env` is read; import `config`, never `process.env` directly
+- `lib/prisma.ts` — shared `prisma` instance — always import this, never `new PrismaClient()`
+- `lib/redis.ts` — `redisClient` for OTPs, tokens, rate limiting
+- `lib/cloudinary.ts` + `lib/multer.ts` — file uploads
+- `lib/nodemailer.ts` — `transporter` + EJS templates in `src/app/templates/`
+- `lib/bKash.ts` — bKash grant-token/API helpers
+- `lib/cron.ts` — scheduled jobs (node-cron)
+- `middleware/checkAuth.ts` — `auth(...roles)` guard; populates `req.user` as `RequestUser { userId, email, name, role }`
+- `middleware/validateRequest.ts` — `validateRequest(zodSchema)` → assigns `req.body = result.data`
+- `utils/catchAsync.ts` — wrap handlers so thrown errors reach the error handler
+- `utils/AppError.ts` — `throw new AppError(statusCode, message)`
+- `utils/sendResponse.ts` — `{ success, statusCode, message, data, meta }` envelope
+- `utils/jwt.ts` — sign/verify helpers
+
+**Route mounting** — `src/app.ts` — a new module is mounted here next to the existing lines:
+```ts
+app.use('/api/v1/<name>', <Name>Routes)
+```
+
+**API reference** — `L2B7 Ph-Healthcare.postman_collection.json` — check for endpoint definitions that already exist before proposing new ones.
 
 ## Step 3 — Create branch
 
 Run:
 ```
-git checkout -b feature/<feature_slug>
+git checkout -b feat/<feature_slug>
 ```
 
 If branch exists, check it out instead.
@@ -79,53 +93,55 @@ Generate a spec document with this exact structure:
 
 ## Overview
 
-One paragraph describing what this feature does for GearUp.
+One paragraph describing what this feature does for PH Healthcare. Reference the relevant
+section of Project Requirements.md so implementers can read the exact business rules.
 
 ## Depends on
 
 List exact file paths this feature builds on, grouped by layer:
-- `lib/types.ts` — specific types used
-- `lib/api/<file>.ts` — API functions used
-- `hooks/use<Name>.ts` — existing hooks used
-- `components/shared/<file>.tsx` — existing components
-- `app/(group)/` — which route group
-- `proxy.ts` — auth protection needed? (role guard, redirect rules)
+- `prisma/schema/<model>.prisma` — models/fields used
+- `src/app/module/<name>/<name>.service.ts` — existing services called into
+- `src/app/lib/<file>.ts` — libs used (prisma, redis, nodemailer, cloudinary, bKash, cron)
+- `src/app/middleware/checkAuth.ts` — which roles guard each route
+- `src/app/utils/*` — helpers used
+- `src/app/config/index.ts` — config values needed
+
+## Database changes
+
+Only if the schema changes:
+```
+prisma/schema/<model>.prisma
+  add FieldName Type?        // reason, migration/backfill notes
+  add relation RelationName  // reason
+```
+Remember: after editing, run `npx prisma migrate dev` then `npx prisma generate`.
 
 ## Routes
 
-- `GET /path` — description, auth required? role?
+- `POST /api/v1/<module>/<path>` — description, auth required? roles? validated body?
+- `GET /api/v1/<module>/public/<path>` — public patient-facing routes live under /public/
 
-## New API functions
-
-```
-lib/api/<name>.ts
-  fetchXxx(args) — GET /api/xxx — returns IApiResponse<Type>
-  createXxx(payload) — POST /api/xxx — returns Type
-```
-
-## New Hooks
+## Service functions
 
 ```
-hooks/use<Name>.ts
-  useXxx() — useQuery({ queryKey: [...], queryFn: fetchXxx })
-  useCreateXxx() — useMutation({ mutationFn: createXxx, onSuccess: invalidate })
+src/app/module/<name>/<name>.service.ts
+  serviceName(args) — what it does, which Prisma calls it makes, what it returns
 ```
 
-## Components
+## Validation schemas
 
-**Create:**
-- `path/to/component.tsx` — what it renders, what props it takes
-
-**Modify:**
-- existing component — what changes
+```
+src/app/module/<name>/<name>.validation.ts
+  XxxValidationZodSchema — what it validates and why
+```
 
 ## Files to change
 
-Exact file paths. One per line.
+Exact file paths. One per line. (e.g. `src/app.ts` to mount the router, `prisma/schema/<model>.prisma`)
 
 ## Files to create
 
-Exact file paths. One per line.
+Exact file paths. One per line. The files that make up a module.
 
 ## New dependencies
 
@@ -133,39 +149,39 @@ List npm packages. If none: "No new dependencies."
 
 ## Rules for implementation
 
-Specific GearUp constraints. Always include relevant items from this list:
+Specific PH Healthcare backend constraints. Always include relevant items from this list:
 
-### Data fetching
-- Use TanStack Query hooks for all client-side data (`useQuery`/`useMutation`) — never raw fetch in components
-- `useMutation` always includes `onSuccess` with `queryClient.invalidateQueries`
-- Mutation buttons must show loading state + disabled attribute
-- Skeleton components for loading state (never spinners for lists)
-- Empty state message for every data list
-- Error state with retry button
+### Module structure
+- One folder per feature: `<name>.route.ts`, `<name>.controller.ts`, `<name>.service.ts`, `<name>.interface.ts`, `<name>.validation.ts`
+- Controllers never call Prisma directly; services never touch `req`/`res` — pass `RequestUser` when a service needs the caller
+- Never spread `req.body` straight into a Prisma create/update — destructure the exact fields (or pass validated zod output)
+- Validate every mutating request with `validateRequest(zodSchema)`; use Zod v4 (`z.email()`, `z.string().trim().min(...)`)
+- Export the router as `<Name>Routes` and mount it in `src/app.ts` under `/api/v1/<name>`
 
-### Auth & routing
-- proxy.ts guards role-based routes (CUSTOMER, PROVIDER, ADMIN)
-- Dashboard pages read user from getMe() in layout, pass as context or re-fetch
-- Auth pages redirect to dashboard if already logged in
+### Auth & roles
+- Guard routes with `auth(Role.X, ...)` — follow the permissions table in Project Requirements.md §2.1
+- Public patient-facing routes go under a `/public/` path segment with no `auth()` guard
+- Read the caller from `req.user` (set by `auth`), never trust a role/`userId` from the body
 
-### UI & animation
-- All clickable elements need `cursor-pointer` + `transition-colors duration-200`
-- Buttons use framer-motion `whileTap={{ scale: 0.97 }}`
-- Card hover: `whileHover={{ y: -4 }}` (not scale — prevents layout shift)
-- Lists use `motion.div` with stagger animation (`staggerChildren: 0.08`)
-- Icons from `@phosphor-icons/react` — never emoji as icons
-- Images use `next/image` with `fill` + `sizes` + `onError` fallback
-- StatusBadge colors: PLACED=yellow, CONFIRMED=blue, PAID=purple, PICKED_UP=green, RETURNED=gray, CANCELLED=red
-- shadcn/ui components from `components/ui/` — never create new primitives
+### Data access
+- Import the shared `prisma` from `src/app/lib/prisma` — never `new PrismaClient()`
+- Never return or select passwords — use `omit: { password: true }`
+- Soft-delete via `isDeleted` / `deletedAt` — no hard deletes; check `isDeleted` in lookups
+- Errors: `throw new AppError(httpStatus.CODE, "message")` — never raw `throw new Error()`
+- Handlers: wrap in `catchAsync` and respond with `sendResponse(res, { statusCode, success, message, data, meta? })`
+- List endpoints: follow the `IQuery` pagination pattern — `limit/page/skip/sortBy/sortOrder`, `andConditions: WhereInput[]`, `searchTerm` + filters, return `{ data, meta }` with `totalPages`
+- Use `take`/`skip` for pagination, `select` (never `include`) on public endpoints so sensitive fields stay out
 
-### Styling
-- Tailwind v4 `@theme` tokens (use `bg-primary`, `text-muted-foreground`, etc.)
-- Dark mode via `dark:` variant
-- `cn()` from `@/lib/utils` for className merging
+### Side effects
+- OTPs/tokens in Redis with TTL: `redisClient.set(key, value, { expiration: { type: "EX", value } })`
+- Emails via `transporter` + EJS templates in `src/app/templates/`; build the path with `path.join(process.cwd(), "src/app/templates/<name>.ejs")`
+- File uploads: `upload.fields([...])` from `lib/multer` + `cloudinary.uploader.upload_stream` → store `secure_url` + `public_id`
+- bKash payments via `lib/bKash` helpers; store the raw gateway response in the `Json` field
+- Everything env-related reads from `config.*` — never `process.env` in application code
 
 ## Definition of done
 
-Testable checklist. Each item verifiable by running `npm run dev`.
+Testable checklist. Each item verifiable by running `npm run dev` + curl / the Postman collection.
 ```
 
 ## Step 5 — Save
@@ -175,7 +191,7 @@ Save to: `.opencode/specs/<feature_slug>.md`
 ## Step 6 — Report
 
 ```
-Branch:    feature/<feature_slug>
+Branch:    feat/<feature_slug>
 Spec file: .opencode/specs/<feature_slug>.md
 Title:     <feature_title>
 ```
@@ -184,4 +200,4 @@ Title:     <feature_title>
 
 ## Example output
 
-For reference, the existing 6 GearUp specs follow this exact format. Read one before writing if unsure.
+For reference, `src/app/module/doctor/`, `schedule/`, and `appointment/` are the canonical module patterns. Read one before writing if unsure.
