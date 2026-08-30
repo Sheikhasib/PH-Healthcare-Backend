@@ -1,20 +1,21 @@
-import { email } from "zod";
 import bcrypt from "bcryptjs";
-import { Role } from "../../generated/prisma/enums";
-import { prisma } from "../lib/prisma";
+import httpStatus from "http-status";
+import { DoctorVerificationStatus, Role } from "../../generated/prisma/enums";
 import config from "../config";
+import { prisma } from "../lib/prisma";
+import { AppError } from "./AppError";
 
 export const seedSuperAdmin = async () => {
   try {
-    const isSuperAdminExists = await prisma.user.findFirst({
+    const isSuperAdminExist = await prisma.user.findFirst({
       where: {
         role: Role.SUPER_ADMIN,
       },
     });
 
-    if (isSuperAdminExists) {
-      console.log("Super Admin already exists. Skipping seeding.");
-      return; // Exit the function if super admin already exists
+    if (isSuperAdminExist) {
+      console.log("Super Admin Already Exists!");
+      return;
     }
 
     const name = config.super_admin_name;
@@ -22,8 +23,9 @@ export const seedSuperAdmin = async () => {
     const password = config.super_admin_password;
 
     if (!name || !email || !password) {
-      throw new Error(
-        "Super admin credentials are not set in the environment variables",
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        "Super Admin Name , Email, Password Missing In Env File!!!",
       );
     }
 
@@ -43,9 +45,9 @@ export const seedSuperAdmin = async () => {
       },
     });
 
-    console.log("Super admin created: ", superAdmin);
+    console.log("Super Admin Created : ", superAdmin);
   } catch (error) {
-    console.error("Error seeding super admin: ", error);
+    console.log("Error Seeding Super Admin : ", error);
 
     await prisma.user.delete({
       where: {
@@ -55,7 +57,8 @@ export const seedSuperAdmin = async () => {
   }
 };
 
-// Create Tester Admin
+//create tester admin
+
 export const seedTesterAdmin = async () => {
   try {
     const isTesterAdminExist = await prisma.user.findUnique({
@@ -74,7 +77,8 @@ export const seedTesterAdmin = async () => {
     const password = config.tester_admin_password;
 
     if (!name || !email || !password) {
-      throw new Error(
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
         "Tester Admin Name , Email, Password Missing In Env File!!!",
       );
     }
@@ -124,10 +128,11 @@ export const seedTesterDoctor = async () => {
 
     const name = config.tester_doctor_name;
     const email = config.tester_doctor_email;
-    const password = config.tester_admin_password;
+    const password = config.tester_doctor_password;
 
     if (!name || !email || !password) {
-      throw new Error(
+      throw new AppError(
+        httpStatus.INTERNAL_SERVER_ERROR,
         "Tester Doctor Name , Email, Password Missing In Env File!!!",
       );
     }
@@ -149,12 +154,11 @@ export const seedTesterDoctor = async () => {
           create: {
             email,
             name,
-            password: hashedPassword,
             experienceYears: 5,
+            licenseNumber: "BMDC0000",
             qualifications: "MBBS",
-            specialization: "General Physician",
-            licenseNumber: "123456789",
-            bio: "I am a doctor",
+            specialization: "Neurology",
+            verificationStatus: DoctorVerificationStatus.APPROVED,
           },
         },
       },
