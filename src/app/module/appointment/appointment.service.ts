@@ -207,7 +207,7 @@ const bookAppointment = async (
       data: {
         // status: bKashCreatePaymentResult.status,
         // amount: bKashCreatePaymentResult.amount,
-        amount: "1200",
+        amount: amount,
         // currency: bKashCreatePaymentResult.currency,
         // paymentGateway: bKashCreatePaymentResult.gateway,
         merchantInvoiceNumber: bKashCreatePaymentResult.merchantInvoiceNumber,
