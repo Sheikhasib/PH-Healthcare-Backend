@@ -317,10 +317,17 @@ const loginUser = async (payload: ILoginUserPayload) => {
   }
 
   // Check if the user has a Google ID associated with their account
-  if (user.password === null || user.googleId !== null) {
+  if (user.googleId !== null) {
     throw new AppError(
       httpStatus.CONFLICT,
       "User already has an account registered with Google. Please use Google login.",
+    );
+  }
+
+  if (user.password === null) {
+    throw new AppError(
+      httpStatus.FORBIDDEN,
+      "No password has been set for this account yet",
     );
   }
 

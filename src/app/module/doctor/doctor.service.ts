@@ -1,4 +1,3 @@
-import { Doctor } from "./../../../generated/prisma/browser";
 import { UploadApiResponse } from "cloudinary";
 import { cloudinary } from "../../lib/cloudinary";
 import { prisma } from "../../lib/prisma";
@@ -26,6 +25,7 @@ import { RequestUser } from "../../middleware/checkAuth";
 import { IQuery } from "../../interfaces";
 import { DoctorWhereInput } from "../../../generated/prisma/models";
 import { addDays, startOfDay } from "date-fns";
+import generateRandomPassword from "../../utils/randomPassword";
 
 // Apply As Doctor
 const applyAsDoctor = async (
@@ -125,17 +125,12 @@ const applyAsDoctor = async (
 
   console.log(additionalFilesUploadResults);
 
-  const randomDoctorPassword = Math.random().toString(36).slice(-8);
-
-  const hashedPassword = await bcrypt.hash(
-    randomDoctorPassword,
-    Number(config.bcrypt_salt_rounds),
-  );
-
+  // The account is created without a password. A strong temporary password is
+  // generated and emailed only once the application is approved, so an
+  // unapproved applicant can never log in.
   const doctorApplication = await prisma.user.create({
     data: {
       ...payload.user,
-      password: hashedPassword,
       role: Role.DOCTOR,
       needPasswordChange: true,
       doctor: {
@@ -163,6 +158,11 @@ const applyAsDoctor = async (
 
   const otpValue = crypto.randomInt(100000, 1000000).toString(); // convert to string because redis only accepts string
 
+  if (config.node_env === "development")
+    console.log(
+      `[dev] Doctor application OTP for ${payload.user.email}: ${otpValue}`,
+    );
+
   await redisClient.set(otpKey, otpValue, {
     expiration: {
       type: "EX",
@@ -185,8 +185,9 @@ const applyAsDoctor = async (
   const html = await ejs.renderFile(templatePath, templateData);
 
   await transporter.sendMail({
+    from: config.email_sender,
     to: payload.user.email,
-    subject: "Registration OTP",
+    subject: "Doctor Application - Email Verification",
     html,
   });
 
@@ -203,7 +204,10 @@ const verifyDoctorEmail = async (payload: IVerifyDoctorEmailPayload) => {
   });
 
   if (!isUserExists) {
-    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+    throw new AppError(
+      httpStatus.NOT_FOUND,
+      "Doctor Application Not Found. Please Apply Again.",
+    );
   }
 
   if (isUserExists.emailVerified) {
@@ -217,16 +221,16 @@ const verifyDoctorEmail = async (payload: IVerifyDoctorEmailPayload) => {
   if (!redisOTP) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "OTP expired. Your application has been rejected.",
+      "OTP Expired. Your Application Window Has Closed, Please Apply Again.",
     );
   }
 
   if (redisOTP !== otp) {
-    throw new AppError(
-      httpStatus.BAD_REQUEST,
-      "OTP does not match. Please try again.",
-    );
+    throw new AppError(httpStatus.BAD_REQUEST, "OTP Does Not Match");
   }
+
+  // Single use: drop the OTP so a leaked value cannot be replayed
+  await redisClient.del(otpKey);
 
   const verifiedUser = await prisma.user.update({
     where: {
@@ -268,15 +272,15 @@ const approveDoctor = async (
 
   if (existingDoctor.isDeleted) {
     throw new AppError(
-      httpStatus.NOT_FOUND,
-      "Doctor application already deleted",
+      httpStatus.GONE,
+      "Doctor Application Has Been Deleted",
     );
   }
 
   if (!existingDoctor.user.emailVerified) {
     throw new AppError(
       httpStatus.BAD_REQUEST,
-      "Doctor email has not verified yet. Application cannot be approved",
+      "Doctor Has Not Verified Their Email Yet. Application Cannot Be Reviewed.",
     );
   }
 
@@ -297,6 +301,18 @@ const approveDoctor = async (
     );
   }
 
+  const isApproved = verificationStatus === DoctorVerificationStatus.APPROVED;
+
+  // The applicant never had a password, so mint the initial one here and mail
+  // it out. `needPasswordChange` stays true so the client can prompt for a reset.
+  const randomDoctorPassword = isApproved
+    ? generateRandomPassword()
+    : undefined;
+
+  const hashedPassword = randomDoctorPassword
+    ? await bcrypt.hash(randomDoctorPassword, Number(config.bcrypt_salt_rounds))
+    : undefined;
+
   const updatedDoctor = await prisma.doctor.update({
     where: { id: doctorId },
     data: {
@@ -307,10 +323,11 @@ const approveDoctor = async (
           : null,
       reviewedBy: reviewer.userId,
       reviewedAt: new Date(),
+      ...(hashedPassword
+        ? { user: { update: { password: hashedPassword } } }
+        : {}),
     },
   });
-
-  const isApproved = verificationStatus === DoctorVerificationStatus.APPROVED;
 
   const tempatePath = path.join(
     process.cwd(),
@@ -323,7 +340,9 @@ const approveDoctor = async (
 
   const templateData = {
     name: updatedDoctor.name,
+    email: updatedDoctor.email,
     reason: updatedDoctor.rejectionReason,
+    password: isApproved ? randomDoctorPassword : undefined,
   };
 
   const html = await ejs.renderFile(tempatePath, templateData);
@@ -480,8 +499,8 @@ const getAvailableDoctorByTodaysSchedule = async (query: IQuery) => {
   const startOfToday = startOfDay(now);
   const startOfTomorrow = addDays(startOfToday, 1);
 
-  // A doctor is "available today" if they have at least one published,
-  // not-yet-started schedule today with open slots left.
+  // A doctor is "available today" if they have at least one published schedule
+  // running today that has not ended yet and still has open slots left.
 
   const andConditions: DoctorWhereInput[] = [
     { isDeleted: false },
@@ -495,8 +514,8 @@ const getAvailableDoctorByTodaysSchedule = async (query: IQuery) => {
           startDateTime: {
             gte: startOfToday,
             lt: startOfTomorrow,
-            gt: now,
           },
+          endDateTime: { gt: now },
         },
       },
     },
@@ -547,10 +566,10 @@ const getAvailableDoctorByTodaysSchedule = async (query: IQuery) => {
           startDateTime: {
             gte: startOfToday,
             lt: startOfTomorrow,
-            gt: now,
           },
+          endDateTime: { gt: now },
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: { startDateTime: "asc" },
         select: {
           id: true,
           startDateTime: true,
