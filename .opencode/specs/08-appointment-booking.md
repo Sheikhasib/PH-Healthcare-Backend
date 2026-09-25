@@ -88,10 +88,19 @@ No new dependencies. (`pdfkit` already installed.)
 - Booking + payment creation run inside `prisma.$transaction`; the bKash HTTP calls happen inside the transaction as written today
 - `merchantInvoiceNumber` is always the appointment id — the callback maps the bKash response back to the appointment via this field
 - Serial number = `(totalSlots - availableSlots) + 1`; joining time = `startDateTime + (serialNumber - 1) * 20` minutes
-- Payment updates inside the callback key off `bKashPaymentId`; schedule decrement uses the plain client (`prisma.schedule`, not `tx`) in the current code — keep consistent
+- Payment updates inside the callback key off `bKashPaymentId`; the schedule decrement currently uses the plain client (`prisma.schedule`, not `tx`) — must use `tx` when fixing (see Known issues below)
 - Never expose doctor `consultationFee` as anything but a string amount to bKash
 - Invoice PDF must include patient name/email, doctor name/specialization, date, joining time, serial number, meeting link, amount, txn id
 - Errors via `AppError`, handlers in `catchAsync`, responses via `sendResponse`; the callback responds with `res.redirect` not `sendResponse`
+
+## Known issues (deferred fixes)
+
+Agreed problems — do **not** change code yet. When this spec is implemented/refactored, apply:
+
+- **Overbooking race**: the `availableSlots === 0` guard and the serial-number/decrement logic are read-then-write with no row lock or atomic update. Two concurrent bookers/callbacks can both pass and oversell a slot; the `@@unique([scheduleId, serialNumber, joiningTime])` constraint catches the duplicate but 500s one payer. Fix: replace the read-then-write decrement with an atomic guarded write, e.g. `prisma.schedule.updateMany({ where: { id, availableSlots: { gt: 0 } }, data: { availableSlots: { decrement: 1 } } })` and treat a `count === 0` result as "no slot left".
+- **Non-atomic writes inside the callback transaction**: `bookAppointmentCallback` writes some rows via the global `prisma` client (e.g. `prisma.schedule.update`) instead of the `tx` client. Every write inside `prisma.$transaction` must use `tx` so a mid-transaction failure rolls back all changes.
+- **Network I/O inside the DB transaction**: `bookAppointment` performs the bKash create-payment `fetch` while the `$transaction` is open. Prefer creating the PENDING appointment + payment row first, then calling bKash outside the transaction (payment state is reconciled by the callback), so a DB transaction is never held open across a network round-trip.
+- **Callback idempotency / security**: the bKash callback is public and does not guard against replay. Before executing, check the linked `Payment.status`; if already `PAID`, skip re-confirmation (no re-decrement of slots, no duplicate invoice email, no serial re-assignment).
 
 ## Definition of done
 

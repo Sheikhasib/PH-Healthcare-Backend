@@ -46,6 +46,21 @@ const applyAsDoctor = async (
     );
   }
 
+  // Check if a doctor with the same license number already exists
+  const isLicenseExist = await prisma.doctor.findUnique({
+    where: {
+      licenseNumber: payload.doctor.licenseNumber,
+    },
+  });
+
+  if (isLicenseExist) {
+    throw new AppError(
+      httpStatus.CONFLICT,
+      "A doctor with this license number already exists",
+      "licenseNumber",
+    );
+  }
+
   const resumeUploadResult = await new Promise<UploadApiResponse>(
     (resolve, reject) => {
       cloudinary.uploader
@@ -164,7 +179,7 @@ const applyAsDoctor = async (
     name: payload.user.name,
     email: payload.user.email,
     otp: otpValue,
-    expirationSeconds: expirationSeconds / 60, // Convert seconds to minutes
+    expirationMinutes: expirationSeconds / 60, // Convert seconds to minutes
   };
 
   const html = await ejs.renderFile(templatePath, templateData);

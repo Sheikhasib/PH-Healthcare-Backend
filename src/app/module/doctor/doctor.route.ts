@@ -26,7 +26,10 @@ router.post(
 );
 
 // Verify Doctor Email route
-router.post("/verify-doctor-email", DoctorController.verifyDoctorEmail);
+router.post(
+  "/apply-as-doctor/verify-email",
+  DoctorController.verifyDoctorEmail,
+);
 
 // Approve Doctor route
 router.post(

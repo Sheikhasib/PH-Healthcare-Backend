@@ -17,6 +17,7 @@ export const globalErrorHandler = async (
   let statusCode: number = httpStatus.INTERNAL_SERVER_ERROR;
   let errorMessage = err.message || "Internal Server Error";
   const errorName = err.name || "Internal Server Error";
+  let errorField: string | undefined;
   // let errorDetails = err.stack
 
   if (err instanceof Prisma.PrismaClientValidationError) {
@@ -24,8 +25,10 @@ export const globalErrorHandler = async (
     errorMessage = "You have provided incorrect field type or missing fields";
   } else if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === "P2002") {
-      ((statusCode = httpStatus.BAD_REQUEST),
-        (errorMessage = "Duplicate Key Error"));
+      const field = (err.meta?.target as string[])?.[0] || "field";
+      statusCode = httpStatus.CONFLICT;
+      errorMessage = `A record with this ${field} already exists`;
+      errorField = field;
     } else if (err.code === "P2003") {
       ((statusCode = httpStatus.BAD_REQUEST),
         (errorMessage = "Foreign key constraint failed"));
@@ -49,6 +52,7 @@ export const globalErrorHandler = async (
   } else if (err instanceof AppError) {
     errorMessage = err.message;
     statusCode = err.statusCode;
+    errorField = err.field;
   } else if (err instanceof Error) {
     errorMessage = err.message;
   }
@@ -62,6 +66,7 @@ export const globalErrorHandler = async (
       config.node_env === "development"
         ? errorMessage
         : "Internal Server Error",
+    field: errorField,
     error: config.node_env === "development" ? err : undefined,
     stack: config.node_env === "development" ? err.stack : undefined,
   });

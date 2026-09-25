@@ -6,6 +6,7 @@ import httpStatus from "http-status";
 import { AppError } from "../../utils/AppError";
 import { ApplyAsDoctorValidationZodSchema } from "./doctor.validation";
 
+// Apply As Doctor
 const applyAsDoctor = catchAsync(
   async (req: Request, res: Response, next: NextFunction) => {
     const files = req.files as {

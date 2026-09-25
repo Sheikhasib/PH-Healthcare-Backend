@@ -40,7 +40,10 @@ const registerPatient = async (payload: IRegisterPatientPayload) => {
   });
 
   if (isUserExists) {
-    throw new AppError(httpStatus.CONFLICT, "User with this email already exists");
+    throw new AppError(
+      httpStatus.CONFLICT,
+      "User with this email already exists",
+    );
   }
 
   const hashedPassword = await bcrypt.hash(
@@ -55,6 +58,11 @@ const registerPatient = async (payload: IRegisterPatientPayload) => {
   const otpValue = crypto.randomInt(100000, 1000000).toString(); // convert to string because redis only accepts string
 
   const expirationSeconds = 5 * 60; // 5 minutes of expiration
+
+  // Log the OTP for development purposes
+  if (config.node_env === "development") {
+    console.log(`[dev] OTP for ${email}: ${otpValue}`);
+  }
 
   // Patient Registration OTP
   await redisClient.set(otpKey, otpValue, {
@@ -439,22 +447,34 @@ const googleLogin = async (payload: IGoogleLoginPayload) => {
     // Log the error for debugging purposes
     console.log("Google ID Token Verification Failed", error);
     // Throw an error indicating that the ID token is invalid or expired
-    throw new AppError(httpStatus.UNAUTHORIZED, "Invalid or Expired Google ID token");
+    throw new AppError(
+      httpStatus.UNAUTHORIZED,
+      "Invalid or Expired Google ID token",
+    );
   }
 
   // Check if the payload is null or undefined
   if (!googleIdTokenPayload) {
-    throw new AppError(httpStatus.UNAUTHORIZED, "Invalid or Expired Google ID token");
+    throw new AppError(
+      httpStatus.UNAUTHORIZED,
+      "Invalid or Expired Google ID token",
+    );
   }
 
   // Check if the payload contains the name field
   if (!googleIdTokenPayload.name) {
-    throw new AppError(httpStatus.BAD_REQUEST, "Google ID token does not contain name");
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Google ID token does not contain name",
+    );
   }
 
   // Check if the payload contains the email field
   if (!googleIdTokenPayload.email) {
-    throw new AppError(httpStatus.BAD_REQUEST, "Google ID token does not contain email");
+    throw new AppError(
+      httpStatus.BAD_REQUEST,
+      "Google ID token does not contain email",
+    );
   }
 
   const ifPatientExistWithGoogleAuth = await prisma.user.findUnique({

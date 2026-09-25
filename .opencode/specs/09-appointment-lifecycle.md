@@ -86,6 +86,14 @@ No new dependencies.
 - `getSingleAppointment` and payment/prescription single views apply the same ownership checks (PATIENT/DOCTOR 403 on foreign rows; ADMIN/SUPER_ADMIN unrestricted)
 - Errors via `AppError`, handlers in `catchAsync`, responses via `sendResponse` (lists return `{ data, meta }`)
 
+## Known issues (deferred fixes)
+
+Agreed problems — do **not** change code yet. When this spec is implemented/refactored, apply:
+
+- **Non-atomic cancel**: `cancelAppointment` restores the schedule slot via the global client (`prisma.schedule.update`, not `tx.schedule.update`) inside its `$transaction`. Use `tx` for every write in the transaction.
+- **Unguarded slot restore**: the `availableSlots: { increment: 1 }` restore should be an atomic guarded update so a slot can never be restored twice (belt-and-braces alongside the existing CANCELLED status check), e.g. `tx.schedule.updateMany({ where: { id, availableSlots: { lt: totalSlots } }, data: { availableSlots: { increment: 1 } } })`.
+- **Refund edge cases**: verify the bKash refund response before marking the payment `REFUNDED` (only write `refundTrxId`/`refundAt` after the gateway confirms), and guard against double-refund if `cancel-appointment` is called twice with a refundable window.
+
 ## Definition of done
 
 Each item verifiable with `npm run dev` + curl:

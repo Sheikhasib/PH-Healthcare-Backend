@@ -79,4 +79,7 @@ router.post(
   AuthController.resetPassword,
 );
 
+// Logout route
+router.post("/logout", AuthController.logout);
+
 export const AuthRoutes = router;

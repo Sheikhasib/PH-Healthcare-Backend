@@ -86,6 +86,14 @@ No new dependencies.
 - Cron deletes only never-verified DOCTOR users (`emailVerified: false`) whose Doctor application is still PENDING and older than 1 hour
 - Never return `password`; errors via `AppError`, handlers in `catchAsync`, responses via `sendResponse`
 
+## Known issues (deferred fixes)
+
+Agreed problems — do **not** change code yet. When this spec is implemented/refactored, apply:
+
+- **Validation belongs in middleware**: `apply-as-doctor` parses and validates `req.body.data` inside the controller instead of route-level `validateRequest`. The zod `safeParse` does strip unknown keys, so a `verificationStatus` field smuggled inside the multipart `data` JSON currently cannot pass through the `...payload.doctor` spread — but validation must move to the route for consistency and defence-in-depth. If the schema is ever changed to `passthrough()`, that spread becomes an injection vector.
+- **Whole-body spread in `updateDoctorProfile`**: `data: payload` relies entirely on the zod schema staying strict. Destructure the exact updatable fields before the update instead of spreading the validated body.
+- **Unguarded seed cleanup**: `seedTesterDoctor`'s catch calls `prisma.user.delete({ where: { email } })`, which throws P2025 if the create failed before the row existed — wrap the delete in a try/catch or check existence first so a seed failure cannot crash server boot.
+
 ## Definition of done
 
 Each item verifiable with `npm run dev` + curl:
